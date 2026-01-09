@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">Order #{{ order.order_id }}</h2>
+    <p class="text-muted mb-0">Placed on {{ order.placed_at.strftime('%b %d, %Y %I:%M %p') }}</p>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('users.orders') }}">&larr; Back to order history</a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <h6 class="text-uppercase text-muted mb-1">Status</h6>
+        <span class="badge {% if order.status == 'FULFILLED' %}bg-success{% elif order.status == 'PARTIAL' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+          {{ order.status }}
+        </span>
+        {% if order.order_fulfilled_at %}
+          <p class="mt-2 mb-0">Fulfilled on {{ order.order_fulfilled_at.strftime('%b %d, %Y %I:%M %p') }}</p>
+        {% elif all_items_fulfilled %}
+          <p class="mt-2 mb-0 text-success">All items fulfilled; updating shortly.</p>
+        {% else %}
+          <p class="mt-2 mb-0 text-muted">Waiting on seller fulfillment.</p>
+        {% endif %}
+      </div>
+      <div class="col-md-4">
+        <h6 class="text-uppercase text-muted mb-1">Shipping Address</h6>
+        <p class="mb-0">{{ order.shipping_address or 'Not provided' }}</p>
+      </div>
+      <div class="col-md-4">
+        <h6 class="text-uppercase text-muted mb-1">Totals</h6>
+        <ul class="list-unstyled mb-0">
+          <li>Items: {{ totals.subtotal }}</li>
+          <li>Discounts: -{{ totals.discount }}</li>
+          <li><strong>Order Total: {{ totals.total }}</strong></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if items %}
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        <th scope="col">Item Information</th>
+        <th scope="col">Quantity</th>
+        <th scope="col">Unit Price</th>
+        <th scope="col">Discount</th>
+        <th scope="col">Line Total</th>
+        <th scope="col">Fulfillment</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>
+          <div class="d-flex gap-3">
+            {% if item.product_image %}
+              <img src="{{ item.product_image }}" alt="{{ item.product_name }}" class="img-thumbnail" style="width: 80px; height: 80px; object-fit: cover;">
+            {% else %}
+              <div class="bg-light border rounded d-flex align-items-center justify-content-center" style="width: 80px; height: 80px;">
+                <span class="text-muted small">No image</span>
+              </div>
+            {% endif %}
+            <div>
+              <div class="fw-semibold"><b>Product Name:</b> {{ item.product_name }}</div>
+              <div class="text-muted small"><b>Seller:</b> <br>{{ item.seller_name }}</div>
+              {% if item.product_description %}
+                <div class="small mt-1 text-muted">
+                  <b>Product Description:</b> <br>
+                  {{ item.product_description | replace('\n', '<br>') | safe }}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </td>
+        <td>{{ item.quantity }}</td>
+        <td>{{ format_currency(item.unit_price_cents) }}</td>
+        <td>
+          {% if item.discount_cents %}
+            {{ format_currency(item.discount_cents) }} / unit
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td>{{ format_currency(item.line_total_cents) }}</td>
+        <td>
+          {% if item.fulfilled_at %}
+            <span class="badge bg-success">Fulfilled</span>
+            <div class="small text-muted">{{ item.fulfilled_at.strftime('%b %d, %Y') }}</div>
+            {% if item.has_review %}
+              <button class="btn btn-outline-primary mt-2 review-btn" 
+                      style="font-size: 0.7rem !important; padding: 0.1rem 0.3rem !important; line-height: 1.2 !important;"
+                      data-product-id="{{ item.product_id }}"
+                      data-rating="{{ item.review_rating }}"
+                      data-title="{{ item.review_title or '' }}"
+                      data-body="{{ item.review_body or '' }}">Edit Review</button>
+            {% else %}
+              <button class="btn btn-outline-success mt-2 review-btn" 
+                      style="font-size: 0.7rem !important; padding: 0.1rem 0.3rem !important; line-height: 1.2 !important;"
+                      data-product-id="{{ item.product_id }}">Write Review</button>
+            {% endif %}
+          {% else %}
+            <span class="badge bg-warning text-dark">Pending</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>No line items were found for this order.</p>
+{% endif %}
+
+<!-- Modal for editing/creating reviews -->
+<div id="reviewModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
+     background:white; padding:20px; border:2px solid #ccc; z-index:9999; min-width:400px; border-radius:8px;">
+  <h4 id="modalTitle">Review</h4>
+  <form id="reviewForm">
+    <div style="margin-bottom:10px;">
+      <label>Rating (1-5): <span style="color:red;">*</span></label>
+      <input type="number" id="reviewRating" min="1" max="5" required style="width:100%; padding:5px;">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>Title (optional):</label>
+      <input type="text" id="reviewTitle" style="width:100%; padding:5px;">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>Review: <span style="color:red;">*</span></label>
+      <textarea id="reviewBody" rows="4" required style="width:100%; padding:5px;"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button type="button" id="deleteBtn" class="btn btn-danger" style="display:none;" onclick="deleteCurrentReview()">Delete Review</button>
+  </form>
+</div>
+<div id="modalOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
+     background:rgba(0,0,0,0.5); z-index:9998;" onclick="closeModal()"></div>
+
+<script>
+let currentReviewType = 'product';
+let currentId = null;
+let isEditing = false;
+
+function closeModal() {
+  document.getElementById('reviewModal').style.display = 'none';
+  document.getElementById('modalOverlay').style.display = 'none';
+}
+
+function openModal(type, id, rating, title, body) {
+  currentReviewType = type;
+  currentId = id;
+  isEditing = (rating !== null && rating !== undefined);
+  
+  const modalTitle = isEditing 
+    ? (type === 'product' ? 'Edit Product Review' : 'Edit Seller Review')
+    : (type === 'product' ? 'Write Product Review' : 'Write Seller Review');
+  
+  document.getElementById('modalTitle').textContent = modalTitle;
+  document.getElementById('reviewRating').value = rating || 5;
+  document.getElementById('reviewTitle').value = title || '';
+  document.getElementById('reviewBody').value = body || '';
+  
+  // Show delete button only when editing
+  document.getElementById('deleteBtn').style.display = isEditing ? 'inline-block' : 'none';
+  
+  document.getElementById('reviewModal').style.display = 'block';
+  document.getElementById('modalOverlay').style.display = 'block';
+}
+
+function deleteCurrentReview() {
+  if (!confirm('Are you sure you want to delete this review?')) return;
+  
+  const url = currentReviewType === 'product' 
+    ? `/api/reviews/product/${currentId}/delete`
+    : `/api/reviews/seller/${currentId}/delete`;
+  
+  fetch(url, { method: 'POST' })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.ok) {
+        alert('Review deleted!');
+        location.reload();
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => alert('Network error: ' + err.message));
+  
+  closeModal();
+}
+
+document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const rating = parseInt(document.getElementById('reviewRating').value);
+  const title = document.getElementById('reviewTitle').value.trim();
+  const body = document.getElementById('reviewBody').value.trim();
+  
+  // Validation
+  if (!body) {
+    alert('Please write a review. The review text is required.');
+    return;
+  }
+  
+  if (!rating || rating < 1 || rating > 5) {
+    alert('Please provide a rating between 1 and 5.');
+    return;
+  }
+  
+  const url = currentReviewType === 'product' 
+    ? `/api/reviews/product/${currentId}`
+    : `/api/reviews/seller/${currentId}`;
+  
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rating, title, body})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert('Review saved!');
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+  closeModal();
+});
+
+// Add event listeners to all review buttons
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.review-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const productId = parseInt(this.dataset.productId);
+      const rating = this.dataset.rating ? parseInt(this.dataset.rating) : null;
+      const title = this.dataset.title || '';
+      const body = this.dataset.body || '';
+      openModal('product', productId, rating, title, body);
+    });
+  });
+});
+</script>
+
+{% endblock %}

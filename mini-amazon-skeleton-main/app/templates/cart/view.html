@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{# TODO (Johnson): Implement cart and saved-for-later tables; submit order #}
+
+{% block content %}
+<h2>Your Cart</h2>
+
+<h4>In Cart</h4>
+<p>
+    {% if discount_amount_cents > 0 %}
+    <br>
+    <span class="text-muted">Original: <del>${{ '%.2f' % (original_cart_total_cents / 100.0) }}</del></span>
+    <br>
+    <span class="text-success">Discount: -${{ '%.2f' % (discount_amount_cents / 100.0) }}</span>
+    <br>
+    <strong>Final Total:</strong>
+    {% else %}
+    <strong>Cart total:</strong>
+    {% endif %}
+    ${{ '%.2f' % (cart_total_cents / 100.0) }}
+
+    &nbsp;&nbsp; | &nbsp;&nbsp;
+
+    <strong>Your balance:</strong>
+    ${{ '%.2f' % (user_balance_cents / 100.0) }}
+
+<form method="post" action="{{ url_for('cart.apply_coupon') }}" class="form-inline mt-2 mb-2">
+    <div class="form-group">
+        <input type="text" class="form-control form-control-sm mr-2" name="coupon_code" placeholder="Promo Code"
+            value="{{ coupon_code if coupon_code else '' }}">
+        <button type="submit" class="btn btn-sm btn-outline-success">Apply</button>
+    </div>
+</form>
+
+{% if cart_total_cents > user_balance_cents %}
+<span class="text-danger">Insufficient balance</span>
+{% endif %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<ul class="mt-2">
+    {% for category, message in messages %}
+    <li class="text-{{ category }}">{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endwith %}
+<form method="post" action="{{ url_for('cart.checkout') }}" class="mt-2" onsubmit="return checkBalance()">
+    <button class="btn btn-primary" type="submit" {% if not cart_items %}disabled{% endif %}>Checkout</button>
+</form>
+</p>
+
+<script>
+    function checkBalance() {
+        const cartTotal = {{ cart_total_cents }};
+    const userBalance = {{ user_balance_cents }};
+
+    if (cartTotal > userBalance) {
+        alert("Insufficient balance! Please top up your account.");
+        return false;
+    }
+
+    return true;
+    }
+
+    function setupPagination(tableId, pageSize) {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        // Filter out "No items" row if present (has colspan attribute)
+        const dataRows = rows.filter(r => {
+            const hasColspan = r.querySelector('td[colspan]');
+            return !hasColspan;
+        });
+
+        // No pagination needed if items fit on one page
+        if (dataRows.length <= pageSize) {
+            return;
+        }
+
+        let currentPage = 1;
+        const totalPages = Math.ceil(dataRows.length / pageSize);
+
+        // Create pagination controls container
+        const paginationDiv = document.createElement('div');
+        paginationDiv.className = 'd-flex justify-content-center align-items-center mt-3 mb-3';
+        paginationDiv.id = `${tableId}-pagination`;
+        paginationDiv.innerHTML = `
+            <button class="btn btn-sm btn-outline-secondary mx-2" id="${tableId}-prev" type="button">Previous</button>
+            <span id="${tableId}-info" class="mx-3">Page ${currentPage} of ${totalPages}</span>
+            <button class="btn btn-sm btn-outline-secondary mx-2" id="${tableId}-next" type="button">Next</button>
+        `;
+
+        // Insert pagination controls after the table
+        table.parentNode.insertBefore(paginationDiv, table.nextSibling);
+
+        const prevBtn = document.getElementById(`${tableId}-prev`);
+        const nextBtn = document.getElementById(`${tableId}-next`);
+        const infoSpan = document.getElementById(`${tableId}-info`);
+
+        function updateDisplay() {
+            const start = (currentPage - 1) * pageSize;
+            const end = start + pageSize;
+
+            dataRows.forEach((row, index) => {
+                if (index >= start && index < end) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            infoSpan.textContent = `Page ${currentPage} of ${totalPages}`;
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages;
+        }
+
+        prevBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                updateDisplay();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                updateDisplay();
+            }
+        });
+
+        // Initialize display
+        updateDisplay();
+    }
+
+    // Initialize pagination when page loads
+    document.addEventListener('DOMContentLoaded', function () {
+        setupPagination('cart-table', 5);
+        setupPagination('saved-table', 5);
+    });
+</script>
+
+
+<table id="cart-table" class='table table-hover table-bordered container'>
+    <thead class="thead-dark">
+        <tr>
+            <th>Product Image</th>
+            <th>Product Name</th>
+            <th>Product Description</th>
+            <th>Seller</th>
+            <th>Unit Price</th>
+            <th>Quantity</th>
+            <th>Subtotal</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in cart_items %}
+        <tr>
+            <td><img src="{{ item.image_url }}" alt="{{ item.name }}" style="width: 100px; height: 100px;"></td>
+            <td>
+                {{ item.product_name }}
+                {% if item.inventory_quantity is not none and item.quantity > item.inventory_quantity %}
+                <br>
+                <span class="text-danger small">
+                    Only {{ item.inventory_quantity }} left in stock!
+                </span>
+                {% endif %}
+            </td>
+            <td>{{ item.description }}</td>
+            <td>{{ item.seller_name }}</td>
+            <td>${{ '%.2f' % ((item.unit_price_cents or 0) / 100.0) }}</td>
+            <td>
+                <form method="post" action="{{ url_for('cart.update_quantity') }}" class="form-inline">
+                    <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                    <input type="hidden" name="seller_id" value="{{ item.seller_id }}">
+                    <input type="number" min="1" class="form-control" style="width: 90px;" name="quantity"
+                        value="{{ item.quantity }}">
+                    <button class="btn btn-secondary ml-2" type="submit">Update</button>
+                </form>
+            </td>
+            <td>${{ '%.2f' % (((item.unit_price_cents or 0) * item.quantity) / 100.0) }}</td>
+            <td>
+                <form method="post" action="{{ url_for('cart.move_to_save') }}">
+                    <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                    <input type="hidden" name="seller_id" value="{{ item.seller_id }}">
+                    <input type="number" min="1" max="{{ item.quantity }}" class="form-control" style="width: 90px;"
+                        name="quantity" value="{{ 1 }}">
+                    <button class="btn btn-primary" type="submit">Save for Later</button>
+                </form>
+                <form method="post" action="{{ url_for('cart.remove_item') }}">
+                    <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                    <input type="hidden" name="seller_id" value="{{ item.seller_id }}">
+                    <input type="hidden" name="is_in_cart" value="True">
+                    <button class="btn btn-danger" type="submit">Remove Item</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="8">No items in cart.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h4>Saved for Later</h4>
+<table id="saved-table" class='table table-hover table-bordered container'>
+    <thead class="thead-dark">
+        <tr>
+            <th>Product Image</th>
+            <th>Product Name</th>
+            <th>Product Description</th>
+            <th>Seller</th>
+            <th>Quantity</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in saved_items %}
+        <tr>
+            <td><img src="{{ item.image_url }}" alt="{{ item.name }}" style="width: 100px; height: 100px;"></td>
+            <td>{{ item.product_name }}</td>
+            <td>{{ item.description }}</td>
+            <td>{{ item.seller_name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>
+                <form method="post" action="{{ url_for('cart.move_to_cart') }}">
+                    <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                    <input type="hidden" name="seller_id" value="{{ item.seller_id }}">
+                    <input type="number" min="1" max="{{ item.quantity }}" class="form-control" style="width: 90px;"
+                        name="quantity" value="{{ 1 }}">
+                    <button class="btn btn-primary" type="submit">Move to Cart</button>
+                </form>
+                <form method="post" action="{{ url_for('cart.remove_item') }}">
+                    <input type="hidden" name="product_id" value="{{ item.product_id }}">
+                    <input type="hidden" name="seller_id" value="{{ item.seller_id }}">
+                    <input type="hidden" name="is_in_cart" value="False">
+                    <button class="btn btn-danger" type="submit">Remove Item</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="6">No items saved for later.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

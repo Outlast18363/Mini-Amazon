@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+  {% if product %}
+    <!-- Product details -->
+    <h2>{{ product.name }}</h2>
+    <p><strong>Category:</strong> {{ product.category_name or "Uncategorized" }}</p>
+
+    {% if product.image_url %}
+      <img src="{{ product.image_url }}" alt="{{ product.name }}" class="img-fluid mb-3">
+    {% else %}
+      <p>No image available.</p>
+    {% endif %}
+
+    <p>{{ product.description or "No description available." }}</p>
+
+    <!-- Edit button, only visible to creator -->
+    {% if current_user.is_authenticated and current_user.id == product.created_by %}
+    <a href="{{ url_for('products.edit', product_id=product.id) }}" class="btn btn-black mr-2 mt-3">Edit Product</a>
+    {% endif %}
+
+    <a href="{{ url_for('products.browse') }}" class="btn btn-secondary mt-3">Back to Products</a>
+
+    <!-- Offers table -->
+    <h3>Sellers Offering This Product</h3>
+    {% if offers %}
+    <table class="table table-hover table-bordered mt-3">
+      <thead class="thead-dark">
+        <tr>
+          <th scope="col">Seller ID</th>
+          <th scope="col">Price</th>
+          <th scope="col">Quantity Available</th>
+          <th scope="col">Last Updated</th>
+          <th scope="col">Add to Cart</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for offer in offers %}
+        <tr>
+          <td>{{ offer.seller_id }}</td>
+          <td>${{ '%.2f' % (offer.price_cents / 100) }}</td>
+          <td>{{ offer.quantity_on_hand }}</td>
+          <td>{{ offer.updated_at }}</td>
+          <td>
+            {% if current_user.is_authenticated %}
+              <form action="{{ url_for('cart.add_to_cart') }}" method="POST" class="form-inline">
+                <input type="hidden" name="product_id" value="{{ product.id }}">
+                <input type="hidden" name="seller_id" value="{{ offer.seller_id }}">
+                <input type="number" name="quantity" value="1" min="1" max="{{ offer.quantity_on_hand }}" class="form-control mr-2" style="width: 80px;">
+                <button type="submit" class="btn btn-black btn-sm">Add</button>
+              </form>
+            {% else %}
+              <a href="{{ url_for('users.login') }}" class="btn btn-secondary btn-sm">Log in to add</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p>No sellers currently offering this product.</p>
+    {% endif %}
+
+    <!-- Average rating and reviews table -->
+    <h3>Reviews For This Product</h3>
+
+    {% if product.review_count > 0 %}
+      <p>
+        <strong>Average Rating:</strong> {{ '%.1f' % product.avg_rating }} / 5
+        (
+        {% if product.review_count == 1 %}
+          1 review
+        {% else %}
+          {{ product.review_count }} reviews
+        {% endif %}
+        )
+      </p>
+    {% endif %}
+
+    {% if reviews %}
+    </table>
+    <table class="table table-hover table-bordered mt-3">
+      <thead class="thead-dark">
+        <tr>
+          <th scope="col">Rating</th>
+          <th scope="col">Title</th>
+          <th scope="col">Review</th>
+          <th scope="col">Author</th>
+          <th scope="col">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reviews %}
+        <tr>
+          <td>{{ r.rating }}/5</td>
+          <td>{{ r.title }}</td>
+          <td>{{ r.body }}</td>
+          <td>User {{ r.author_user_id }}</td>
+          <td>{{ r.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p>No reviews yet.</p>
+    {% endif %}
+  {% else %}
+    <p>Product not found.</p>
+    <a href="{{ url_for('products.browse') }}" class="btn btn-secondary mt-3">Back to Products</a>
+  {% endif %}
+</div>
+{% endblock %}

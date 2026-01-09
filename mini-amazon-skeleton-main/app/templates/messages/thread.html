@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Thread #{{ thread_id }}</h2>
+<p><strong>Buyer:</strong> {{ buyer_name }} &nbsp; | &nbsp; <strong>Seller:</strong> {{ seller_name }}</p>
+
+<div id="msgs" style="border:1px solid #ddd; padding:10px; max-width:800px;">
+  {% if messages %}
+    {% for m in messages %}
+      <div style="margin-bottom:8px;" data-message-id="{{ m.message_id }}" data-sent-at="{{ m.sent_at.isoformat() }}" data-sender-id="{{ m.sender_user_id }}">
+        <div style="font-size: 0.9em; color:#666; display: flex; justify-content: space-between; align-items: center;">
+          <span>{{ m.sent_at }} — user {{ m.sender_user_id }}</span>
+          {% if m.sender_user_id == current_user.id %}
+            <button class="btn btn-sm btn-danger delete-msg-btn" 
+                    data-message-id="{{ m.message_id }}" 
+                    data-sent-at="{{ m.sent_at.isoformat() }}"
+                    style="display:none;">
+              Undo (<span class="countdown"></span>s)
+            </button>
+          {% endif %}
+        </div>
+        <div>{{ m.body }}</div>
+      </div>
+      <hr>
+    {% endfor %}
+  {% else %}
+    <p>No messages yet.</p>
+  {% endif %}
+</div>
+
+<div style="margin-top:10px; max-width:800px;">
+  <div id="errorAlert" class="alert alert-danger" role="alert" style="display:none; margin-bottom:10px;"></div>
+  <textarea id="body" rows="3" style="width:100%;" placeholder="Type a message"></textarea>
+  <button id="send" class="btn btn-primary" style="margin-top:6px;">Send</button>
+</div>
+
+<script>
+// Function to update delete button visibility and countdown
+function updateDeleteButtons() {
+  const now = new Date();
+  const buttons = document.querySelectorAll('.delete-msg-btn');
+  
+  buttons.forEach(btn => {
+    const sentAt = new Date(btn.dataset.sentAt);
+    const secondsElapsed = Math.floor((now - sentAt) / 1000);
+    const secondsRemaining = 60 - secondsElapsed;
+    
+    if (secondsRemaining > 0) {
+      btn.style.display = 'inline-block';
+      btn.querySelector('.countdown').textContent = secondsRemaining;
+    } else {
+      btn.style.display = 'none';
+    }
+  });
+}
+
+// Update delete buttons immediately and then every second
+updateDeleteButtons();
+setInterval(updateDeleteButtons, 1000);
+
+// Handle undo button clicks
+document.querySelectorAll('.delete-msg-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Undo this message?')) return;
+    
+    const messageId = btn.dataset.messageId;
+    const errorAlert = document.getElementById('errorAlert');
+    
+    try {
+      const res = await fetch(`/api/messages/${messageId}`, {
+        method: 'DELETE'
+      });
+      
+      const data = await res.json();
+      
+      if (data.ok) {
+        location.reload();
+      } else {
+        errorAlert.textContent = data.error || 'Undo failed';
+        errorAlert.style.display = 'block';
+      }
+    } catch (err) {
+      errorAlert.textContent = 'Network error: ' + err.message;
+      errorAlert.style.display = 'block';
+    }
+  });
+});
+
+document.getElementById('send').addEventListener('click', async () => {
+  const body = (document.getElementById('body').value || '').trim();
+  const errorAlert = document.getElementById('errorAlert');
+  
+  // Hide previous errors
+  errorAlert.style.display = 'none';
+  
+  if (!body) return;
+  
+  const res = await fetch('/api/messages/{{ thread_id }}', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({body})
+  });
+  
+  const data = await res.json();
+  
+  if (!res.ok) {
+    // Show error message in red alert
+    errorAlert.textContent = data.error || 'Send failed';
+    errorAlert.style.display = 'block';
+    return;
+  }
+  
+  location.reload();
+});
+</script>
+{% endblock %}
+
+
+

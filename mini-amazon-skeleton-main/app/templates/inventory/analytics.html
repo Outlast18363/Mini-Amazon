@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Inventory Analytics</h2>
+<p class="text-muted">
+  See low-inventory alerts and your best-selling products over time.
+</p>
+
+<!-- Controls -->
+<div style="margin:12px 0; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+  <label>
+    Low-inventory threshold
+    <input id="threshold" type="number" min="0" value="5" class="form-control" style="max-width:120px;">
+  </label>
+
+  <label>
+    Top N products
+    <input id="top_n" type="number" min="1" value="5" class="form-control" style="max-width:120px;">
+  </label>
+
+  <label>
+    Window (days)
+    <input id="window_days" type="number" min="1" value="90" class="form-control" style="max-width:120px;">
+  </label>
+
+  <button id="reload" type="button" class="btn btn-primary">Reload Analytics</button>
+  <span id="busy" class="text-muted" style="display:none;">Loading…</span>
+</div>
+
+<div id="msg" style="margin-bottom:10px; color:#b71c1c;"></div>
+
+<div class="row">
+  <!-- Low Inventory Card -->
+  <div class="col-md-6">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <strong>Low Inventory Items</strong>
+      </div>
+      <div class="card-body" style="padding:8px;">
+        <table class="table table-sm table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody id="low_tbody">
+            <tr><td colspan="4" class="text-muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Products Card -->
+  <div class="col-md-6">
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <strong>Top Products (Sales)</strong>
+      </div>
+      <div class="card-body" style="padding:8px;">
+        <table class="table table-sm table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Units Sold</th>
+              <th>Revenue</th>
+              <th>Last Sold</th>
+            </tr>
+          </thead>
+          <tbody id="top_tbody">
+            <tr><td colspan="4" class="text-muted">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $  = (s) => document.querySelector(s);
+
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])
+  );
+}
+function fmtMoneyFromCents(c){
+  const n = Number(c);
+  if (!isFinite(n)) return '$0.00';
+  return '$' + (n / 100).toFixed(2);
+}
+function fmtDate(s){
+  if (!s) return '';
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? s : d.toLocaleString();
+}
+
+async function loadAnalytics(){
+  const msg  = $('#msg');
+  const busy = $('#busy');
+  const lowBody = $('#low_tbody');
+  const topBody = $('#top_tbody');
+
+  msg.textContent = '';
+  busy.style.display = '';
+
+  const threshold   = Number($('#threshold').value) || 5;
+  const top_n       = Number($('#top_n').value) || 5;
+  const window_days = Number($('#window_days').value) || 90;
+
+  const params = new URLSearchParams({
+    threshold: threshold,
+    top_n: top_n,
+    window_days: window_days
+  });
+
+  try{
+    const res = await fetch('/api/inventory/analytics?' + params.toString());
+    if (!res.ok){
+      let errText = 'HTTP ' + res.status;
+      try{
+        const e = await res.json();
+        errText = e.error || errText;
+      }catch{}
+      throw new Error(errText);
+    }
+    const data = await res.json();
+
+    // --- Low inventory table ---
+    lowBody.innerHTML = '';
+    if (!data.low_inventory || data.low_inventory.length === 0){
+      lowBody.innerHTML = `<tr><td colspan="4" class="text-muted">No items at or below this threshold.</td></tr>`;
+    }else{
+      for (const it of data.low_inventory){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>#${it.product_id} — ${esc(it.product_name || '')}</td>
+          <td>${it.quantity_on_hand}</td>
+          <td>${fmtMoneyFromCents(it.price_cents)}</td>
+          <td>${fmtDate(it.updated_at)}</td>
+        `;
+        lowBody.appendChild(tr);
+      }
+    }
+
+    // --- Top products table ---
+    topBody.innerHTML = '';
+    if (!data.top_products || data.top_products.length === 0){
+      topBody.innerHTML = `<tr><td colspan="4" class="text-muted">No sales in this window.</td></tr>`;
+    }else{
+      for (const it of data.top_products){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>#${it.product_id} — ${esc(it.product_name || '')}</td>
+          <td>${it.total_units_sold}</td>
+          <td>${fmtMoneyFromCents(it.gross_revenue_cents)}</td>
+          <td>${fmtDate(it.last_sold_at)}</td>
+        `;
+        topBody.appendChild(tr);
+      }
+    }
+
+  }catch(e){
+    msg.textContent = 'Failed to load analytics: ' + (e.message || e);
+  }finally{
+    busy.style.display = 'none';
+  }
+}
+
+$('#reload').addEventListener('click', loadAnalytics);
+window.addEventListener('DOMContentLoaded', loadAnalytics);
+</script>
+{% endblock %}

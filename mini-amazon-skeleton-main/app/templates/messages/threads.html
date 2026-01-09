@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Messages</h2>
+
+{% if threads %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Order</th>
+      <th>Buyer</th>
+      <th>Seller</th>
+      <th>Last message</th>
+      <th>When</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in threads %}
+    <tr {% if t.unread_count> 0 %}style="background-color: #e3f2fd;"{% endif %}>
+      <td>#{{ t.order_id }}</td>
+      <td>
+        <a href="{{ url_for('users.public_profile', user_id=t.buyer_user_id) }}">
+          {{ t.buyer_name }}
+        </a>
+      </td>
+      <td>
+        <a href="{{ url_for('users.public_profile', user_id=t.seller_account_id) }}">
+          {{ t.seller_name }}
+        </a>
+      </td>
+      <td>
+        {{ t.last_body or "(no messages yet)" }}
+        {% if t.unread_count > 0 %}
+        <span class="badge badge-primary ml-2">{{ t.unread_count }} new</span>
+        {% endif %}
+      </td>
+      <td>{{ t.last_sent_at or t.created_at }}</td>
+      <td><a class="btn btn-sm btn-primary" href="/messages/{{ t.thread_id }}">Open</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No message threads yet.</p>
+{% endif %}
+{% endblock %}

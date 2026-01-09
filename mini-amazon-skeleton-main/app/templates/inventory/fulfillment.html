@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Fulfillment</h2>
+<p class="text-muted">Review order line items that involve you as the seller. Mark individual lines as fulfilled.</p>
+
+<div style="margin:12px 0; display:flex; gap:10px; align-items:center;">
+  <label>Status
+    <select id="status">
+      <option value="PLACED">Pending (unfulfilled)</option>
+      <option value="FULFILLED">Fulfilled</option>
+    </select>
+  </label>
+  <button id="reload" class="btn btn-primary">Reload</button>
+</div>
+
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Order</th>
+      <th>Product</th>
+      <th>Qty</th>
+      <th>Unit Price</th>
+      <th>Buyer</th>
+      <th>Placed</th>
+      <th>Fulfilled</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div id="msg" style="margin-top:8px; color:#b71c1c;"></div>
+
+<script>
+async function fetchLines() {
+  const status = document.getElementById('status').value;
+  const msg = document.getElementById('msg');
+  msg.textContent = '';
+
+  try {
+    const res = await fetch('/api/fulfillment?status=' + encodeURIComponent(status));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + res.status));
+    }
+
+    const data = await res.json();
+    const tbody = document.getElementById('rows');
+    tbody.innerHTML = '';
+
+    if (!data.items || data.items.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="8" class="text-muted">No items found for this view.</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+
+    data.items.forEach(it => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>#${it.order_id}</td>
+        <td>#${it.product_id} — ${escapeHtml(it.product_name || '')}</td>
+        <td>${it.quantity}</td>
+        <td>$${(it.unit_price_final_cents/100).toFixed(2)}</td>
+        <td>${escapeHtml(it.buyer_name || '')}<br><small>${escapeHtml(it.buyer_address || '')}</small></td>
+        <td>${fmtDate(it.placed_at)}</td>
+        <td>${it.fulfilled_at ? fmtDate(it.fulfilled_at) : '-'}</td>
+        <td>
+          ${it.fulfilled_at ? '' : `<button class="btn btn-sm btn-success" data-order="${it.order_id}" data-product="${it.product_id}">Mark Fulfilled</button>`}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.querySelectorAll('button[data-order]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+
+        try {
+          const body = {
+            order_id: Number(btn.dataset.order),
+            product_id: Number(btn.dataset.product)
+          };
+
+          const r = await fetch('/api/fulfillment/mark', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.error || ('HTTP ' + r.status));
+          }
+
+          fetchLines();
+
+        } catch (e) {
+          msg.textContent = 'Error marking fulfilled: ' + e.message;
+          btn.disabled = false;
+        }
+      });
+    });
+
+  } catch (e) {
+    msg.textContent = 'Error loading fulfillment items: ' + e.message;
+  }
+}
+
+function fmtDate(s) {
+  try { return new Date(s).toLocaleString(); } catch { return s || ''; }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[c]));
+}
+
+document.getElementById('reload').addEventListener('click', fetchLines);
+document.getElementById('status').addEventListener('change', fetchLines);
+window.addEventListener('DOMContentLoaded', fetchLines);
+</script>
+
+{% endblock %}

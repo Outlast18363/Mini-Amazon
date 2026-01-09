@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Mini Amazon</title>
+  <script src="//code.jquery.com/jquery-1.11.1.min.js"></script>
+  <link href="//maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet" id="bootstrap-css">
+  <script src="//maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/example.css') }}">
+  <style>
+    body {
+        font-family: "Lato", sans-serif;
+    }
+
+    .main-head {
+        height: 150px;
+        background: #FFF;
+    }
+
+    .sidenav {
+        height: auto;
+        width: 100%;
+        background-color: #000;
+        overflow-x: hidden;
+        padding: 10px 20px;
+    }
+
+    .main {
+        padding: 0px 10px;
+    }
+
+    .login-main-text {
+        margin-top: 20%;
+        padding: 60px;
+        color: #fff;
+    }
+
+    .login-main-text h2 {
+        font-weight: 300;
+    }
+
+    .btn-black {
+        background-color: #000 !important;
+        color: #fff;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="sidenav">
+    {% block msg %}
+      <h1 style="color:aliceblue">Welcome to CompSci 316 Mini Amazon!</h1>
+      <div style="color: aliceblue; text-align: right; margin-bottom: 25px">
+        {% if current_user.is_authenticated %}
+          Hello {{ current_user.full_name or current_user.firstname }}! <a href="{{ url_for('users.logout') }}" type="button" class="btn btn-light">Log out</a>
+        {% else %}
+          <a href="{{ url_for('users.login') }}" type="button" class="btn btn-light">Log in</a>
+        {% endif %}
+      </div>
+    {% endblock %}
+    <nav class="nav flex-row align-items-center" style="padding-left: 10px; gap: 8px;">
+      <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('index.index') }}">Home</a>
+      <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('products.browse') }}">Products</a>
+      {% if current_user.is_authenticated %}
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('cart.view') }}">Cart</a>
+        <a class="btn btn-outline-light btn-sm mr-2 position-relative" href="{{ url_for('messages.threads') }}" style="position: relative;">
+          Messages
+          {% if unread_messages > 0 %}
+            <span class="badge rounded-pill bg-danger" style="position: absolute; top: -8px; right: -8px; font-size: 0.7rem; padding: 0.25em 0.5em;">
+              {{ unread_messages }}
+            </span>
+          {% endif %}
+        </a>
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('reviews.mine') }}">My Reviews</a>
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('users.account') }}">Account</a>
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('users.orders') }}">Orders History</a>
+        {% if is_seller %}
+          <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('inventory.manage') }}">Inventory</a>
+          <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('inventory.fulfillment') }}">Fulfillment</a>
+        {% endif %}
+      {% else %}
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('users.login') }}">Login</a>
+        <a class="btn btn-outline-light btn-sm mr-2" href="{{ url_for('users.register') }}">Register</a>
+      {% endif %}
+    </nav>
+  </div>
+  <div class="main">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+  <!-- User Header Card -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body text-center">
+      <div class="mb-3">
+        <!-- Placeholder Avatar -->
+        <img src="https://ui-avatars.com/api/?name={{ user.full_name }}&background=random&size=128"
+          class="rounded-circle" alt="User Avatar">
+      </div>
+      <h2 class="card-title">{{ user.full_name }}</h2>
+      <p class="text-muted">Account ID: #{{ user.id }}</p>
+
+      {% if profile_is_seller %}
+      <span class="badge badge-success px-3 py-2">Verified Seller</span>
+      <br>
+      {% if current_user.is_authenticated and current_user.id != user.id %}
+      <button class="btn btn-sm btn-outline-info mt-2" onclick="messageSeller({{ seller_id }})">
+        Message Seller
+      </button>
+      {% endif %}
+      {% if can_review %}
+      {% if existing_review %}
+      <button class="btn btn-sm btn-outline-primary mt-2"
+        onclick="openReviewModal({{ seller_id }}, {{ existing_review.rating }}, '{{ existing_review.title | replace("'", "\\'") }}', '{{ existing_review.body | replace("'", "\\'") | replace("
+        \n", "\\n" ) }}')">
+        Edit Review
+      </button>
+      {% else %}
+      <button class="btn btn-sm btn-outline-success mt-2" onclick="openReviewModal({{ seller_id }}, null, '', '')">
+        Write Review
+      </button>
+      {% endif %}
+      {% endif %}
+      {% else %}
+      <span class="badge badge-secondary px-3 py-2">Member</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if profile_is_seller %}
+  <div class="row">
+    <!-- Seller Info Column -->
+    <div class="col-md-4 mb-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-light">
+          <h5 class="mb-0">Seller Details</h5>
+        </div>
+        <div class="card-body">
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+              <span class="text-muted">Email</span>
+              <span class="font-weight-bold">{{ user.email }}</span>
+            </li>
+            <li class="list-group-item px-0">
+              <div class="text-muted mb-1">Address</div>
+              <div class="font-weight-bold">{{ user.address }}</div>
+            </li>
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+              <span class="text-muted">Total Reviews</span>
+              <span class="badge badge-primary badge-pill">{{ reviews|length }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reviews Column -->
+    <div class="col-md-8">
+      <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Seller Reviews</h5>
+        </div>
+        <div class="card-body">
+          {% if reviews %}
+          {% for review in reviews %}
+          <div class="media mb-4 pb-4 border-bottom">
+            <img
+              src="https://ui-avatars.com/api/?name=User+{{ review.author_user_id }}&background=eee&color=333&size=48"
+              class="mr-3 rounded-circle" alt="Reviewer Avatar" width="48">
+            <div class="media-body">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="mt-0 mb-0 font-weight-bold">
+                  {% if review.title %}{{ review.title }}{% else %}Review{% endif %}
+                </h6>
+                <small class="text-muted">{{ review.created_at.strftime('%Y-%m-%d') }}</small>
+              </div>
+              <div class="mb-2">
+                {% for i in range(5) %}
+                {% if i < review.rating %} <span class="text-warning">★</span>
+                  {% else %}
+                  <span class="text-muted">★</span>
+                  {% endif %}
+                  {% endfor %}
+                  <span class="ml-2 text-muted small">by User #{{ review.author_user_id }}</span>
+              </div>
+              <p class="text-secondary mb-0">{{ review.body }}</p>
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="text-center py-5">
+            <h4 class="text-muted">No reviews yet</h4>
+            <p class="text-muted">This seller hasn't received any feedback yet.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Review Modal -->
+<div id="reviewModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); 
+     background:white; padding:20px; border:2px solid #ccc; z-index:9999; min-width:400px; border-radius:8px;">
+  <h4 id="modalTitle">Write Seller Review</h4>
+  <form id="reviewForm">
+    <div style="margin-bottom:10px;">
+      <label>Rating (1-5): <span style="color:red;">*</span></label>
+      <input type="number" id="reviewRating" min="1" max="5" required style="width:100%; padding:5px;" value="5">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>Title (optional):</label>
+      <input type="text" id="reviewTitle" style="width:100%; padding:5px;">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>Review: <span style="color:red;">*</span></label>
+      <textarea id="reviewBody" rows="4" required style="width:100%; padding:5px;"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    <button type="button" id="deleteBtn" class="btn btn-danger" style="display:none;" onclick="deleteReview()">Delete
+      Review</button>
+  </form>
+</div>
+<div id="modalOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; 
+     background:rgba(0,0,0,0.5); z-index:9998;" onclick="closeModal()"></div>
+
+<script>
+  let currentSellerId = null;
+  let isEditing = false;
+
+  function closeModal() {
+    document.getElementById('reviewModal').style.display = 'none';
+    document.getElementById('modalOverlay').style.display = 'none';
+  }
+
+  function openReviewModal(sellerId, rating, title, body) {
+    currentSellerId = sellerId;
+    isEditing = (rating !== null && rating !== undefined);
+
+    document.getElementById('modalTitle').textContent = isEditing ? 'Edit Seller Review' : 'Write Seller Review';
+    document.getElementById('reviewRating').value = rating || 5;
+    document.getElementById('reviewTitle').value = title || '';
+    document.getElementById('reviewBody').value = body || '';
+
+    // Show delete button only when editing
+    document.getElementById('deleteBtn').style.display = isEditing ? 'inline-block' : 'none';
+
+    document.getElementById('reviewModal').style.display = 'block';
+    document.getElementById('modalOverlay').style.display = 'block';
+  }
+
+  function deleteReview() {
+    if (!confirm('Are you sure you want to delete this review?')) return;
+
+    fetch(`/api/reviews/seller/${currentSellerId}/delete`, { method: 'POST' })
+      .then(resp => resp.json())
+      .then(data => {
+        if (data.ok) {
+          alert('Review deleted!');
+          closeModal();
+          location.reload();
+        } else {
+          alert('Error: ' + (data.error || 'Unknown error'));
+          closeModal();
+        }
+      })
+      .catch(err => {
+        alert('Network error: ' + err.message);
+        closeModal();
+      });
+  }
+
+  document.getElementById('reviewForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rating = parseInt(document.getElementById('reviewRating').value);
+    const title = document.getElementById('reviewTitle').value.trim();
+    const body = document.getElementById('reviewBody').value.trim();
+
+    // Validation
+    if (!body) {
+      alert('Please write a review. The review text is required.');
+      return;
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+      alert('Please provide a rating between 1 and 5.');
+      return;
+    }
+
+    try {
+      const resp = await fetch(`/api/reviews/seller/${currentSellerId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, title, body })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        alert('Review saved!');
+        location.reload();
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    }
+    closeModal();
+  });
+
+  async function messageSeller(sellerId) {
+    try {
+      // First, try to get an order ID from the backend
+      const orderResp = await fetch(`/api/orders/seller/${sellerId}/any`);
+      const orderData = await orderResp.json();
+
+      let orderId;
+      if (orderData.ok && orderData.order_id) {
+        orderId = orderData.order_id;
+      } else {
+        // Fallback: ask user for order ID
+        const orderIdStr = prompt('Enter your Order ID to message this seller:');
+        if (!orderIdStr) return;
+        orderId = parseInt(orderIdStr);
+        if (isNaN(orderId)) {
+          alert('Invalid order ID');
+          return;
+        }
+      }
+
+      // Get or create thread
+      const resp = await fetch('/api/messages/thread', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, seller_user_id: sellerId })
+      });
+      const data = await resp.json();
+
+      if (data.ok && data.thread_id) {
+        // Redirect to the message thread
+        window.location.href = `/messages/${data.thread_id}`;
+      } else {
+        alert('Error: ' + (data.error || 'Could not create/find message thread'));
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    }
+  }
+</script>
+
+{% endblock %}

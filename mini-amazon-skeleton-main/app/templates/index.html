@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="jumbotron text-center bg-light">
+  <h1 class="display-4">Welcome to Mini Amazon</h1>
+  <p class="lead">Find everything you need at the best prices.</p>
+  <hr class="my-4">
+  
+  <!-- User Search Form -->
+  <form action="{{ url_for('users.search') }}" method="get" class="form-inline justify-content-center">
+    <div class="input-group mb-3 w-50">
+      <input type="text" class="form-control" name="keyword" placeholder="Search users by ID, Name or Email" aria-label="Search users" required>
+      <div class="input-group-append">
+        <button class="btn btn-primary" type="submit">Search Users</button>
+      </div>
+    </div>
+  </form>
+
+{% if current_user.is_authenticated %}
+  <div class="mt-3 d-flex justify-content-center align-items-center">
+    <!-- Create Product Button -->
+    <a href="{{ url_for('products.create') }}" class="btn btn-success mr-2">Create a Product</a>
+
+    <!-- Seller toggle button -->
+    <form action="{% if not is_seller %}{{ url_for('sellers.become_seller') }}
+                 {% else %}{{ url_for('sellers.remove_seller') }}{% endif %}" method="POST" class="mb-0">
+      <button type="submit" class="btn {% if not is_seller %}btn-success{% else %}btn-danger{% endif %}">
+        {% if not is_seller %}
+          Become a Seller
+        {% else %}
+          Stop Being a Seller
+        {% endif %}
+      </button>
+    </form>
+  </div>
+{% else %}
+  <p class="mt-3 text-center">
+    <a href="{{ url_for('users.login') }}" class="btn btn-primary">Log In</a>
+    <a href="{{ url_for('users.register') }}" class="btn btn-secondary">Register</a>
+  </p>
+{% endif %}
+
+<div class="container">
+  {% if current_user.is_authenticated and purchase_history %}
+  <div class="row mb-5">
+    <div class="col-12">
+      <h3>Your Recent Purchases</h3>
+      <div class="table-responsive">
+        <table class='table table-hover table-sm'>
+          <thead class="thead-light">
+            <tr>
+              <th scope="col">Order ID</th>
+              <th scope="col">Product</th>
+              <th scope="col">Price</th>
+              <th scope="col">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for purchase in purchase_history[:5] %}
+              <tr>
+                <td>{{ purchase.id }}</td>
+                <td>{{ purchase.product_name }}</td>
+                <td>${{ '%.2f' % (purchase.price_cents / 100.0) }}</td>
+                <td>{{ purchase.time_purchased }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% if purchase_history|length > 5 %}
+        <div class="text-right">
+            <a href="{{ url_for('users.orders') }}">View All Orders</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="row">
+    <div class="col-12 mb-3">
+      <h3>Featured Products</h3>
+    </div>
+
+    {% if avail_products %}
+      {% for product in avail_products %}
+      <div class="col-md-4 col-lg-3 mb-4">
+        <div class="card h-100 shadow-sm">
+          <img
+            src="{{ product.image_url or 'https://via.placeholder.com/300x200?text=No+Image' }}"
+            class="card-img-top"
+            alt="{{ product.name }}"
+            style="height: 200px; object-fit: cover;"
+          >
+
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title text-truncate" title="{{ product.name }}"> {{ product.name }} </h5>
+            
+            <p class="card-text text-muted mb-1"> Category: {{ product.category_name if product.category_name else 'Uncategorized' }} </p>
+
+            <p class="card-text text-muted mb-1">
+              Price:
+              {% if product.avg_price %}
+                ${{ '%.2f' % product.avg_price }}
+              {% else %}
+                No sellers yet
+              {% endif %}
+            </p>
+
+            <p class="card-text text-muted mb-1">
+              Rating:
+              {% if product.review_count and product.review_count > 0 %}
+                {{ '%.1f' % product.avg_rating }} stars ({{ product.review_count }} reviews)
+              {% else %}
+                No reviews yet
+              {% endif %}
+            </p>
+
+            <a href="{{ url_for('products.detail', product_id=product.id) }}"
+              class="btn btn-outline-primary mt-auto btn-block">
+              View Details
+            </a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="col-12">
+        <p>No products available at the moment.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

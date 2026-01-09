@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Search Results for "{{ keyword }}"</h2>
+
+    {% if results %}
+    <div class="list-group mt-3">
+        {% for user in results %}
+        <a href="{{ url_for('users.public_profile', user_id=user.id) }}" class="list-group-item list-group-item-action">
+            <div class="d-flex w-100 justify-content-between">
+                <h5 class="mb-1">{{ user.full_name }}</h5>
+                <small>ID: {{ user.id }}</small>
+            </div>
+            <p class="mb-1">{{ user.email }}</p>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="mt-3">No users found matching your search.</p>
+    {% endif %}
+</div>
+{% endblock %}

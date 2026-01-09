@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Account Settings</h2>
+
+<form method="POST">
+  {{ form.hidden_tag() }}
+  <div style="margin-bottom: 10px;">
+    <label>User ID (read-only):</label><br>
+    <input type="text" value="{{ user_id }}" disabled>
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <label>Full Name:</label><br>
+    {{ form.full_name(size=40) }}
+    {% for err in form.full_name.errors %}
+      <div style="color:red;">{{ err }}</div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <label>Address:</label><br>
+    {{ form.address(size=60) }}
+    {% for err in form.address.errors %}
+      <div style="color:red;">{{ err }}</div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <label>Email:</label><br>
+    {{ form.email(size=40) }}
+    {% for err in form.email.errors %}
+      <div style="color:red;">{{ err }}</div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <label>New Password (leave blank to keep current password):</label><br>
+    {{ form.password(size=30) }}
+    {% for err in form.password.errors %}
+      <div style="color:red;">{{ err }}</div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-bottom: 10px;">
+    <label>Repeat New Password:</label><br>
+    {{ form.password2(size=30) }}
+    {% for err in form.password2.errors %}
+      <div style="color:red;">{{ err }}</div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top: 20px;">
+    {{ form.submit() }}
+  </div>
+</form>
+
+<hr>
+<h3>Balance Management</h3>
+<p>Current Balance: ${{ current_user.balance }}</p>
+<form action="{{ url_for('users.update_balance') }}" method="POST" onsubmit="return confirmBalanceAction(this)">
+    {{ balance_form.hidden_tag() }}
+    <div style="margin-bottom: 10px;">
+        {{ balance_form.action.label }} {{ balance_form.action }}
+    </div>
+    <div style="margin-bottom: 10px;">
+        {{ balance_form.amount.label }}: {{ balance_form.amount(size=10, id="balance_amount") }}
+        {% for err in balance_form.amount.errors %}
+          <span style="color:red;">{{ err }}</span>
+        {% endfor %}
+    </div>
+    <div>{{ balance_form.submit() }}</div>
+</form>
+
+<script>
+function confirmBalanceAction(form) {
+    // Get the selected action value (add or sub)
+    // WTForms renders radio buttons with the same name 'action'
+    const actionInputs = form.querySelectorAll('input[name="action"]');
+    let action = null;
+    for (const input of actionInputs) {
+        if (input.checked) {
+            action = input.value;
+            break;
+        }
+    }
+
+    const amountInput = document.getElementById('balance_amount');
+    const raw = amountInput.value || '';
+    const amount = parseFloat(raw.trim());
+    const currentBalance = parseFloat("{{ current_user.balance }}");
+
+    if (isNaN(amount) || amount <= 0) {
+        alert("Please enter a valid positive amount.");
+        return false;
+    }
+
+    if (action === 'sub' && amount > currentBalance) {
+      alert("Insufficient funds.");
+        return false;
+    }
+
+    const actionName = action === 'add' ? "Top Up" : "Withdraw";
+    return confirm(`Are you sure you want to ${actionName} $${amount}?`);
+}
+</script>
+
+{% endblock %}

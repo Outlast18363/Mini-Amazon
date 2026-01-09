@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Inventory</h2>
+<p class="text-muted">Manage products, price, and quantity on hand.</p>
+
+<!-- Controls -->
+<div style="margin:12px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  <label>Search
+    <input id="search" placeholder="name or description" autocomplete="off">
+  </label>
+  <label>Sort
+    <select id="sort">
+      <option value="updated" selected>Recently Updated</option>
+      <option value="name_asc">Name ↑</option>
+      <option value="price_asc">Price ↑</option>
+      <option value="price_desc">Price ↓</option>
+      <option value="qty_desc">Quantity ↓</option>
+    </select>
+  </label>
+  <button id="reload" class="btn btn-primary" type="button">Reload</button>
+  <span id="busy" class="text-muted" style="display:none;">Loading…</span>
+</div>
+
+<!-- Add / Update form (upsert) -->
+<div class="card" style="padding:12px; margin-bottom:12px;">
+  <strong>Add / Update Inventory Item</strong>
+  <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:8px;">
+    <label>Product ID
+      <input id="up_pid" type="number" min="1" placeholder="e.g., 12">
+    </label>
+    <label>Price (cents)
+      <input id="up_price" type="number" min="0" placeholder="e.g., 1299">
+    </label>
+    <label>Quantity
+      <input id="up_qty" type="number" min="0" placeholder="e.g., 5">
+    </label>
+    <button id="up_btn" class="btn btn-success" type="button">Save</button>
+    <span id="up_msg" style="margin-left:6px;"></span>
+  </div>
+</div>
+
+<!-- Inventory table -->
+<table class="table table-striped" id="inv_table">
+  <thead>
+    <tr>
+      <th>Product</th>
+      <th>Price</th>
+      <th>Qty</th>
+      <th>Rating</th>
+      <th>Updated</th>
+      <th style="width:220px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div id="msg" style="margin-top:8px; color:#b71c1c;"></div>
+
+<!-- Centered edit modal -->
+<div id="edit_modal_backdrop"
+     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1050; align-items:center; justify-content:center;">
+  <div style="background:white; padding:16px 20px; border-radius:8px; max-width:360px; width:90%; box-shadow:0 6px 20px rgba(0,0,0,0.25);">
+    <h5>Edit Inventory Item</h5>
+    <div class="text-muted" id="edit_modal_title" style="font-size:0.9rem; margin-bottom:10px;"></div>
+    <form onsubmit="return false;">
+      <input type="hidden" id="edit_pid">
+      <div class="form-group">
+        <label for="edit_price">Price (cents)</label>
+        <input id="edit_price" type="number" class="form-control" min="0">
+      </div>
+      <div class="form-group">
+        <label for="edit_qty">Quantity</label>
+        <input id="edit_qty" type="number" class="form-control" min="0">
+      </div>
+      <div id="edit_error" class="text-danger" style="margin-bottom:6px;"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:4px;">
+        <button type="button" id="edit_cancel" class="btn btn-secondary btn-sm">Cancel</button>
+        <button type="button" id="edit_save" class="btn btn-primary btn-sm">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const $  = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
+}
+function fmtMoneyCents(c){
+  const n = Number(c);
+  return isFinite(n) ? (n / 100).toFixed(2) : '0.00';
+}
+function fmtRating(r){
+  const n = Number(r);
+  if (!isFinite(n) || Number.isNaN(n)) return '—';
+  return n.toFixed(2);
+}
+function fmtDate(s){
+  if (!s) return '';
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? s : d.toLocaleString();
+}
+
+let searchTimer = null;
+
+async function fetchInventory(){
+  $('#busy').style.display = '';
+  $('#msg').textContent = '';
+
+  const params = new URLSearchParams({
+    search: $('#search').value.trim(),
+    sort: $('#sort').value,
+    limit: 200
+  });
+
+  let data;
+  try{
+    const res = await fetch('/api/inventory?' + params.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+  }catch(err){
+    $('#busy').style.display = 'none';
+    $('#msg').textContent = 'Failed to load inventory: ' + (err.message || err);
+    return;
+  }
+
+  const tbody = $('#rows');
+  tbody.innerHTML = '';
+
+  const items = (data && Array.isArray(data.items)) ? data.items : [];
+  if (items.length === 0){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="6" class="text-muted">No inventory items found.</td>`;
+    tbody.appendChild(tr);
+    $('#busy').style.display = 'none';
+    return;
+  }
+
+  for (const it of items){
+    const tr = document.createElement('tr');
+    tr.dataset.pid   = it.product_id;
+    tr.dataset.price = it.price_cents;
+    tr.dataset.qty   = it.quantity_on_hand;
+    tr.dataset.name  = it.product_name || '';
+    tr.innerHTML = `
+      <td>
+        ${it.image_url ? `<img src="${esc(it.image_url)}" width="40" height="30" style="margin-right:6px;border-radius:6px;object-fit:cover;">` : ''}
+        <strong>#${it.product_id}</strong> — ${esc(it.product_name || '')}
+        <div class="text-muted" style="font-size:12px;max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${esc(it.description || '')}
+        </div>
+      </td>
+      <td>$${fmtMoneyCents(it.price_cents)}</td>
+      <td>${Number(it.quantity_on_hand) ?? 0}</td>
+      <td>${fmtRating(it.avg_rating)}⭐ (${it.num_reviews ?? 0})</td>
+      <td>${fmtDate(it.updated_at)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-secondary act-edit" type="button">Edit</button>
+        <button class="btn btn-sm btn-outline-danger act-del" type="button">Remove</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  $('#busy').style.display = 'none';
+}
+
+/* Modal helpers */
+function openEditModal(pid, name, price, qty){
+  $('#edit_pid').value = pid;
+  $('#edit_price').value = price;
+  $('#edit_qty').value = qty;
+  $('#edit_error').textContent = '';
+  $('#edit_modal_title').textContent = `Product #${pid} — ${name || ''}`;
+  $('#edit_modal_backdrop').style.display = 'flex';
+}
+
+function closeEditModal(){
+  $('#edit_modal_backdrop').style.display = 'none';
+}
+
+/* Event delegation for Edit / Remove */
+$('#inv_table').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const tr = e.target.closest('tr');
+  if (!tr) return;
+
+  const pid = Number(tr.dataset.pid);
+
+  if (btn.classList.contains('act-edit')){
+    const curPrice = Number(tr.dataset.price);
+    const curQty   = Number(tr.dataset.qty);
+    const name     = tr.dataset.name || '';
+    openEditModal(pid, name, curPrice, curQty);
+  }
+
+  if (btn.classList.contains('act-del')){
+    if (!confirm('Remove product #'+pid+' from your inventory?')) return;
+    try{
+      const res = await fetch('/api/inventory/' + pid, { method:'DELETE' });
+      if (!res.ok){
+        let msg = 'Delete failed';
+        try{ const j = await res.json(); msg = j.error || msg; }catch{}
+        throw new Error(msg);
+      }
+      await fetchInventory();
+    }catch(err){
+      alert(err.message || String(err));
+    }
+  }
+});
+
+/* Modal buttons */
+$('#edit_cancel').addEventListener('click', () => {
+  closeEditModal();
+});
+
+$('#edit_save').addEventListener('click', async () => {
+  const pid   = Number($('#edit_pid').value);
+  const price = Number($('#edit_price').value);
+  const qty   = Number($('#edit_qty').value);
+  const errBox = $('#edit_error');
+
+  errBox.textContent = '';
+
+  if (!Number.isInteger(price) || price < 0 || !Number.isInteger(qty) || qty < 0){
+    errBox.textContent = 'Please enter non-negative integers for price (cents) and quantity.';
+    return;
+  }
+
+  try{
+    const res = await fetch('/api/inventory/' + pid, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({price_cents: price, quantity_on_hand: qty})
+    });
+    if (!res.ok){
+      let msg = 'Update failed';
+      try{ const j = await res.json(); msg = j.error || msg; }catch{}
+      throw new Error(msg);
+    }
+    closeEditModal();
+    await fetchInventory();
+  }catch(err){
+    errBox.textContent = err.message || String(err);
+  }
+});
+
+/* Close modal when clicking outside the panel */
+$('#edit_modal_backdrop').addEventListener('click', (e) => {
+  if (e.target === $('#edit_modal_backdrop')) {
+    closeEditModal();
+  }
+});
+
+$('#reload').addEventListener('click', fetchInventory);
+
+/* Debounce search input */
+$('#search').addEventListener('input', ()=>{
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(fetchInventory, 300);
+});
+
+/* Sort change -> reload */
+$('#sort').addEventListener('change', fetchInventory);
+
+/* Upsert handler for "Add / Update" form */
+$('#up_btn').addEventListener('click', async ()=>{
+  const pid      = Number($('#up_pid').value);
+  const priceStr = $('#up_price').value.trim();
+  const qtyStr   = $('#up_qty').value.trim();
+  const msg      = $('#up_msg');
+
+  msg.style.color = '#555';
+  msg.textContent = 'Saving…';
+
+  if (!Number.isInteger(pid) || pid <= 0){
+    msg.style.color = '#b71c1c';
+    msg.textContent = 'Product id must be an integer > 0.';
+    return;
+  }
+
+  let price = null;
+  let qty   = null;
+
+  if (priceStr !== '') {
+    price = Number(priceStr);
+    if (!Number.isInteger(price) || price < 0){
+      msg.style.color = '#b71c1c';
+      msg.textContent = 'Price (cents) must be a non-negative integer if provided.';
+      return;
+    }
+  }
+
+  if (qtyStr !== '') {
+    qty = Number(qtyStr);
+    if (!Number.isInteger(qty) || qty < 0){
+      msg.style.color = '#b71c1c';
+      msg.textContent = 'Quantity must be a non-negative integer if provided.';
+      return;
+    }
+  }
+
+  try{
+    const payload = {
+      product_id: pid,
+      price_cents: price,             // null if blank
+      quantity_on_hand: qty           // null if blank
+    };
+
+    const res = await fetch('/api/inventory/upsert', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok){
+      let eText = 'Error';
+      try{ const e = await res.json(); eText = e.error || eText; }catch{}
+      throw new Error(eText);
+    }
+    msg.style.color = '#2e7d32';
+    msg.textContent = 'Saved.';
+    $('#up_pid').value = '';
+    $('#up_price').value = '';
+    $('#up_qty').value = '';
+    await fetchInventory();
+  }catch(err){
+    msg.style.color = '#b71c1c';
+    msg.textContent = err.message || String(err);
+  }
+});
+
+window.addEventListener('DOMContentLoaded', fetchInventory);
+</script>
+{% endblock %}
